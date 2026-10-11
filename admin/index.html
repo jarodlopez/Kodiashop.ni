@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kodiashop | Admin</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/admin/manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Kodiashop Admin">
+    <link rel="apple-touch-icon" href="/admin/icons/icon-192.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { kodiBlue: '#2563eb', kodiDark: '#050505' },
+                    fontFamily: { bebas: ['"Bebas Neue"', 'sans-serif'], jakarta: ['"Plus Jakarta Sans"', 'sans-serif'], mono: ['"Space Mono"', 'monospace'] },
+                    animation: { 'slideUp': 'slideUp 0.3s ease-out' },
+                    keyframes: { slideUp: { '0%': { transform: 'translateY(20px)', opacity: 0 }, '100%': { transform: 'translateY(0)', opacity: 1 } } }
+                }
+            }
+        }
+    </script>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
+
+    <!-- Firebase init (plain JS — must run before Babel scripts) -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDZxtwqBOpiJjMrRlF5tgfVl7uEPpACfoE",
+            authDomain: "kodiashop-5f927.firebaseapp.com",
+            projectId: "kodiashop-5f927",
+            storageBucket: "kodiashop-5f927.firebasestorage.app"
+        };
+        const IMGBB_API_KEY = "B922654effe3a1ab5ac85cc4c23f97b8";
+        if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+        var db = firebase.firestore();
+        var auth = firebase.auth();
+    </script>
+
+    <style>
+        body { background-color: #000; color: #fff; font-family: 'Plus Jakarta Sans', sans-serif; }
+        .brutalist-input { width: 100%; background: #0d0d0d; border: 1px solid #2a2a2a; color: white; padding: 0.65rem 0.85rem; font-size: 0.82rem; margin-top: 0.25rem; outline: none; transition: border-color 0.2s, background 0.2s; font-family: 'Plus Jakarta Sans', sans-serif; border-radius: 10px; }
+        .brutalist-input:focus { border-color: #2563eb; background: #111; }
+        .brutalist-btn { background: #2563eb; color: black; padding: 0.65rem 1.5rem; font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; cursor: pointer; text-transform: uppercase; border: 2px solid #2563eb; transition: all 0.2s; letter-spacing: 0.05em; border-radius: 10px; }
+        .brutalist-btn:hover { background: #000; color: #2563eb; box-shadow: 3px 3px 0px 0px #2563eb; }
+        .brutalist-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+        .brutalist-btn-outline { background: #000; color: #fff; border: 1px solid #2a2a2a; transition: all 0.2s ease; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.75rem; font-weight: 600; border-radius: 8px; }
+        .brutalist-btn-outline:hover, .brutalist-btn-outline.active { border-color: #2563eb; color: #2563eb; }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #000; } ::-webkit-scrollbar-thumb { background: #333; } ::-webkit-scrollbar-thumb:hover { background: #2563eb; }
+
+        /* Responsive sidebar / bottom nav */
+        .admin-sidebar { display: none; flex-direction: column; width: 13rem; background: #000; border-right: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+        .admin-bottom-nav {
+            display: flex; position: fixed; bottom: 0; left: 0; right: 0; z-index: 400;
+            background: rgba(0,0,0,0.88);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border-top: 1px solid rgba(255,255,255,0.07);
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        /* !important prevents Tailwind CDN (injected after this block) from
+           overriding padding-bottom via p-4's shorthand at same specificity. */
+        .admin-main-padding { padding-bottom: max(7rem, calc(4.5rem + env(safe-area-inset-bottom, 0px))) !important; }
+        .admin-saving-offset { bottom: 7rem; }
+        @media (min-width: 768px) {
+            .admin-sidebar { display: flex; }
+            .admin-bottom-nav { display: none; }
+            .admin-main-padding { padding-bottom: 2rem !important; }
+            .admin-saving-offset { bottom: 1.5rem; }
+        }
+
+        /* Form slide-up sheet — z-index above nav so content is never clipped */
+        .form-sheet {
+            position: fixed; inset: 0; z-index: 500; background: #0a0a0a;
+            overflow-y: auto; transform: translateY(100%);
+            transition: transform 0.32s cubic-bezier(0.32,0.72,0,1);
+            padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1.5rem);
+            border-radius: 24px 24px 0 0;
+        }
+        .form-sheet.is-open { transform: translateY(0); }
+
+        /* Desktop form sidebar (hidden on mobile) */
+        .desk-form { display: none; border-radius: 16px; overflow: hidden; }
+
+        /* Floating action button (mobile only) */
+        .fab {
+            position: fixed; bottom: 6rem; right: 1.25rem; z-index: 450;
+            width: 54px; height: 54px; background: #2563eb; color: #000;
+            border-radius: 50%; border: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; font-weight: 900;
+            box-shadow: 0 4px 24px rgba(37,99,235,0.5), 0 1px 4px rgba(0,0,0,0.6);
+            transition: transform 0.15s, box-shadow 0.15s; touch-action: manipulation;
+        }
+        .fab:active { transform: scale(0.91); box-shadow: 0 2px 12px rgba(37,99,235,0.4); }
+
+        /* Orders: cards on mobile, table on desktop */
+        .order-cards { display: flex; flex-direction: column; gap: 0.5rem; }
+        .order-table-wrap { display: none; }
+
+        /* View slide-in animation */
+        @keyframes fadeSlideIn { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+        .view-animate { animation: fadeSlideIn 0.22s ease-out; }
+
+        /* Analytics KPI grid: 4 cols on desktop */
+        .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+
+        /* Hidden in sheet: desktop-only inner header (hidden on mobile, visible on desktop inside desk-form) */
+        .form-sheet .hidden-in-sheet { display: none; }
+        .desk-form .form-sheet-header { display: none; }
+
+        @media (min-width: 768px) {
+            .form-sheet { display: none !important; }
+            .desk-form { display: flex; flex-direction: column; width: 33.333%; min-width: 280px; max-width: 380px; flex-shrink: 0; }
+            .fab { display: none; }
+            .order-cards { display: none; }
+            .order-table-wrap { display: block; overflow-x: auto; }
+            .kpi-grid { grid-template-columns: repeat(4, 1fr) !important; }
+            .desk-form .hidden-in-sheet { display: block; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- Admin scripts — fully pre-compiled with esbuild, no Babel Standalone needed. -->
+    <script src="/dist/admin-views.js"></script>
+    <script src="/dist/admin-panel.js"></script>
+
+
+    <!-- Service Worker + PWA install -->
+    <script>
+        window.__pwaInstallPrompt = null;
+
+        // Capture install prompt before Chrome dismisses it
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            window.__pwaInstallPrompt = e;
+            // Notify React if already mounted
+            if (window.__pwaReadyCallback) window.__pwaReadyCallback();
+        });
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/admin/sw.js').then(reg => {
+                    // When a new SW takes over reload to get fresh HTML
+                    let refreshing = false;
+                    navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        if (!refreshing) { refreshing = true; window.location.reload(); }
+                    });
+                }).catch(err => console.error('SW error:', err));
+            });
+        }
+    </script>
+</body>
+</html>
