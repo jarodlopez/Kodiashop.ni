@@ -4,7 +4,7 @@
 //
 // En Vercel corre solo en cada deploy (buildCommand de vercel.json) y lee estas
 // variables de entorno, así no hay que editar código:
-//   WHATSAPP_NUMBER (obligatoria). FIREBASE_PROJECT_ID y FIREBASE_WEB_API_KEY son opcionales:
+//   WHATSAPP_NUMBER (opcional: el número ya está escrito en index.html; solo sirve si aún queda el de otra marca). FIREBASE_PROJECT_ID y FIREBASE_WEB_API_KEY son opcionales:
 //   si faltan se usa el proyecto kodiashop-5f927.
 //   SITE_URL (opcional: si falta usa el dominio de producción de Vercel)
 // Si falta alguna, el deploy FALLA a propósito para no publicar la tienda
@@ -17,7 +17,7 @@ const path = require('path');
 const OLD = {
   project: 'kuranic-b1034',
   apikey: 'AIzaSyB6YA-gSckDvi-fdFlRsvwRttr3VnGQ82U',
-  wa: '50584016969',
+  wa: '50587091008',
   site: 'https://kodiashop.vercel.app',
 };
 
@@ -29,10 +29,10 @@ const env = process.env;
 // (FIREBASE_PROJECT_ID / FIREBASE_WEB_API_KEY) tienen prioridad si las defines.
 args.project = args.project || env.FIREBASE_PROJECT_ID || 'kodiashop-5f927';
 args.apikey = args.apikey || env.FIREBASE_WEB_API_KEY || 'AIzaSyDZxtwqBOpiJjMrRlF5tgfVl7uEPpACfoE';
-args.wa = args.wa || env.WHATSAPP_NUMBER;
+args.wa = args.wa || env.WHATSAPP_NUMBER || '';
 args.site = args.site || env.SITE_URL || (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
 
-const missing = ['project', 'apikey', 'wa', 'site'].filter((k) => !args[k]);
+const missing = ['project', 'apikey', 'site'].filter((k) => !args[k]);
 if (missing.length) {
   const vars = { project: 'FIREBASE_PROJECT_ID', apikey: 'FIREBASE_WEB_API_KEY', wa: 'WHATSAPP_NUMBER', site: 'SITE_URL' };
   console.error(`Faltan variables de entorno: ${missing.map((m) => vars[m]).join(', ')}\nAgrégalas en Vercel > Settings > Environment Variables y vuelve a desplegar.`);
@@ -40,7 +40,7 @@ if (missing.length) {
 }
 if (!/^[a-z0-9-]+$/.test(args.project)) { console.error('--project solo admite minúsculas, números y guiones'); process.exit(1); }
 if (!/^AIza[\w-]{30,}$/.test(args.apikey)) { console.error('--apikey no parece una API key web de Firebase (empieza con AIza)'); process.exit(1); }
-if (!/^\d{8,15}$/.test(args.wa)) { console.error('--wa debe ser solo dígitos con código de país, ej. 50588887777'); process.exit(1); }
+if (args.wa && !/^\d{8,15}$/.test(args.wa)) { console.error('--wa debe ser solo dígitos con código de país, ej. 50588887777'); process.exit(1); }
 args.site = args.site.replace(/\/+$/, '');
 if (!/^https:\/\/[\w.-]+$/.test(args.site)) { console.error('--site debe ser https://tu-dominio (sin ruta)'); process.exit(1); }
 
@@ -49,7 +49,7 @@ const EXT = new Set(['.js', '.html', '.json', '.xml', '.txt', '.md']);
 const pairs = [
   [OLD.project, args.project],
   [OLD.apikey, args.apikey],
-  [OLD.wa, args.wa],
+  ...(args.wa ? [[OLD.wa, args.wa]] : []),
   [OLD.site, args.site],
   [OLD.site.replace('https://', ''), args.site.replace('https://', '')],
 ];
