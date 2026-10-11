@@ -268,6 +268,16 @@ const IMGBB_KEY = 'B922654effe3a1ab5ac85cc4c23f97b8';
 const SHIP = { managua: { label: 'Managua', cost: 100 }, departamentos: { label: 'Departamentos', cost: 165 } };
 const K = { cart: 'kodia_cart', pend: 'kodia_pending_order', code: 'kodia_code', popup: 'kodia_popup' };
 
+/* ============ DIAGNÓSTICO (solo con /?debug=1) ============ */
+const dbg = (m) => {
+  if (!/[?&]debug\b/.test(location.search)) return;
+  let b = document.getElementById('dbg');
+  if (!b) { b = document.createElement('pre'); b.id = 'dbg'; b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:999;background:#111;color:#9fc4ff;font:12px/1.4 monospace;padding:10px;margin:0;max-height:45vh;overflow:auto;white-space:pre-wrap'; document.body.appendChild(b); }
+  b.textContent += m + '\n';
+};
+window.addEventListener('error', (e) => dbg('ERROR JS: ' + e.message));
+window.addEventListener('unhandledrejection', (e) => dbg('PROMESA: ' + (e.reason?.code || e.reason?.message || e.reason)));
+
 /* ============ UTILIDADES ============ */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -642,12 +652,4 @@ document.addEventListener('click', (e) => {
   const t = e.target.closest('button,a,dialog'); if (!t) return;
   const g = (a) => t.dataset[a];
   if (g('go') === 'catalogo') setTimeout(goCatalog, 0);
-  if (t.tagName === 'DIALOG' && e.target === t) { const r = t.getBoundingClientRect(); if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right) t.close(); return; }
-  if (g('open')) openProduct(g('open'));
-  else if (g('close')) closeDlg(g('close'));
-  else if (g('cat') !== undefined) { cat = g('cat'); history.replaceState(null, '', cat === 'ALL' ? '/' : '?category=' + encodeURIComponent(cat)); renderChips(); renderGrid(); }
-  else if (g('size') !== undefined) { pSize = g('size'); paintProduct(byId($('#dp [data-add]').dataset.add)); }
-  else if (g('add')) addToCart(g('add'));
-  else if (g('dot') !== undefined) { const h = $('#hero'); h.scrollTo({ left: +g('dot') * (h.clientWidth + 12), behavior: 'smooth' }); }
-  else if (t.hasAttribute('data-popup')) openPopup();
-  else if (g('usecode')) { if (useCode(g('usecode'))
+  if (t.tagName === 'DIALOG' && e.target === t) { const r = t.getBoundingClientRect(); if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.
