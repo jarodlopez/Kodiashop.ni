@@ -90,6 +90,8 @@ header{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdro
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--blue);color:#fff;font-weight:600;border-radius:12px;padding:14px 20px;width:100%}
 .btn:hover{background:var(--blue-d)}
 .btn:disabled{opacity:.55;cursor:not-allowed}
+.btn.wa{background:#fff;color:#128C4A;border:1.5px solid #25D366}
+.btn.wa:hover{background:#eefbf3}
 .btn.alt{background:var(--sky);color:var(--blue)}
 .btn.ghost{background:none;color:var(--ink2);font-weight:500;padding:10px}
 .btn.ok{background:#25D366;color:#073b1b}
@@ -142,6 +144,8 @@ dialog[open]{animation:up .22s ease-out;display:flex;flex-direction:column}
 .zone{border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;text-align:left}
 .zone[aria-pressed=true]{border-color:var(--blue);background:var(--sky)}
 .zone b{display:block;font-size:14px}.zone small{color:var(--ink2)}
+.zsel{width:100%;margin-top:8px;border:1px solid var(--line);border-radius:12px;padding:13px 14px;background:var(--paper)}
+.zsel:focus{border-color:var(--blue);outline:0;box-shadow:0 0 0 3px rgba(11,99,246,.15)}
 .code{display:flex;gap:8px;margin-top:8px}
 .code input{flex:1;border:1px solid var(--line);border-radius:12px;padding:12px 14px;text-transform:uppercase}
 .code button{background:var(--ink);color:#fff;border-radius:12px;padding:0 16px;font-weight:600}
@@ -265,7 +269,14 @@ const FB = {
 };
 const WA = '50587091008';
 const IMGBB_KEY = 'B922654effe3a1ab5ac85cc4c23f97b8';
-const SHIP = { managua: { label: 'Managua', cost: 100 }, departamentos: { label: 'Departamentos', cost: 165 } };
+// Zonas de envío: por defecto estas; si el admin guarda las suyas (settings/store.shippingZones) se usan esas.
+let ZONES = [{ id: 'managua', name: 'Managua', cost: 100 }, { id: 'departamentos', name: 'Departamentos', cost: 165 }];
+const zone = () => ZONES.find((z) => z.id === ui.zone) || ZONES[0];
+const shipTxt = (n) => (n > 0 ? fmt(n) : 'Gratis');
+// Modo de compra:
+//   'whatsapp' = el pedido se arma aquí y se coordina por WhatsApp (no usa servidor ni claves)
+//   'order'    = crea el pedido en el sistema y cobra por transferencia (requiere /api/order y /api/payment)
+const CHECKOUT = 'whatsapp';
 const K = { cart: 'kodia_cart', pend: 'kodia_pending_order', code: 'kodia_code', popup: 'kodia_popup' };
 
 /* ============ DIAGNÓSTICO (solo con /?debug=1) ============ */
@@ -331,7 +342,7 @@ function calc() {
   const subtotal = lines().reduce((a, l) => a + Number(price(l.p) || 0), 0);
   const a = ui.applied;
   const discount = a ? (a.type === 'percent' ? Math.round(subtotal * a.value / 100) : Math.min(a.value, subtotal)) : 0;
-  const shipping = subtotal > 0 ? SHIP[ui.zone].cost : 0;
+  const shipping = subtotal > 0 ? zone().cost : 0;
   return { subtotal, discount, shipping, total: subtotal - discount + shipping };
 }
 
@@ -468,6 +479,7 @@ function paintProduct(p) {
           <div class="sizes">${sizes.map((s) => `<button class="size" data-size="${esc(s)}" aria-pressed="${pSize === s}" ${stockOf(p, s) <= 0 ? 'disabled' : ''}>${esc(s)}</button>`).join('')}</div>` : ''}
         <div id="perr"></div>
         <button class="btn" style="margin-top:18px" data-add="${esc(p.id)}" ${sold ? 'disabled' : ''}>${sold ? 'Agotado' : 'Agregar al carrito'}</button>
+        <button class="btn wa" style="margin-top:10px" data-wa="${esc(p.id)}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.2 14.3c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.8s.7-2 .9-2.3c.3-.3.6-.3.8-.3h.6c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .6l-.4.6c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1.1c.2-.3.4-.2.7-.1l2 .9c.3.1.5.2.5.4.1.2.1.8-.2 1.5z"/></svg>${sold ? 'Consultar disponibilidad' : 'Consultar por WhatsApp'}</button>
         ${p.description ? `<p class="desc">${esc(p.description)}</p>` : ''}
         ${det ? `<div class="lbl">Detalles</div><p class="desc" style="margin-top:6px">${esc(det)}</p>` : ''}
       </div></div></div>`;
@@ -496,6 +508,36 @@ function route() {
   if (id && byId(id)) openProduct(id, false); else if ($('#dp').open) { pushed = false; closeDlg('dp'); }
 }
 
+/* ============ WHATSAPP ============ */
+const productUrl = (id) => `${location.origin}/producto/${encodeURIComponent(id)}`;
+function waProductMsg(p, size) {
+  const opt = size && size !== 'ÚNICA' ? ` (${size})` : '';
+  return `Hola Kodiashop, quiero consultar por este producto:\n\n*${p.title}*${opt}\nPrecio: ${fmt(price(p))}\n${productUrl(p.id)}\n\n¿Está disponible?`;
+}
+function waOrderMsg() {
+  const grouped = {};
+  lines().forEach((l) => { const k = l.id + '|' + l.size; (grouped[k] = grouped[k] || { ...l, n: 0 }).n++; });
+  const items = Object.values(grouped).map((l) => `• ${l.n} x ${l.p.title}${l.size !== 'ÚNICA' ? ' (' + l.size + ')' : ''} — ${fmt(price(l.p))}`).join('\n');
+  const t = calc(), f = ui.form;
+  return `Hola Kodiashop, quiero hacer este pedido:\n\n${items}\n\nSubtotal: ${fmt(t.subtotal)}`
+    + (t.discount ? `\nDescuento (${ui.applied.code}): -${fmt(t.discount)}` : '')
+    + `\nEnvío (${zone().name}): ${shipTxt(t.shipping)}\n*Total estimado: ${fmt(t.total)}*`
+    + `\n\nMis datos:\nNombre: ${f.name.trim()}\nTeléfono: ${f.phone.trim()}\nDirección: ${f.address.trim()}`
+    + `\n\nQuedo atento para coordinar el pago y la entrega.`;
+}
+function openWa(url) { const w = window.open(url, '_blank', 'noopener'); if (!w) location.href = url; }
+function sendWhatsApp() {
+  const f = ui.form;
+  if (!lines().length) { ui.err = 'Tu carrito está vacío.'; return paintCart(); }
+  if (f.name.trim().length < 2 || f.phone.replace(/\D/g, '').length < 7 || f.address.trim().length < 5) {
+    ui.err = 'Completa tu nombre, un teléfono válido y tu dirección.'; return paintCart();
+  }
+  ui.waUrl = waLink(waOrderMsg());
+  cart = []; saveCart(); ui.applied = null; ui.code = ''; ui.codeMsg = ''; jdel(K.code);
+  ui.err = ''; ui.step = 'done'; ui.doneWa = true; paintCart();
+  openWa(ui.waUrl);
+}
+
 /* ============ CARRITO / CHECKOUT / PAGO ============ */
 function openCart(step) {
   ui.step = step || (pending && !lines().length ? 'pay' : 'cart'); ui.err = '';
@@ -509,7 +551,7 @@ function summaryHtml(t) {
   return `<div class="tot">
     <div><span>Subtotal</span><span>${fmt(t.subtotal)}</span></div>
     ${t.discount ? `<div><span>Descuento${ui.applied ? ' ' + esc(ui.applied.code) : ''}</span><span>-${fmt(t.discount)}</span></div>` : ''}
-    <div><span>Envío ${esc(SHIP[ui.zone].label)}</span><span>${fmt(t.shipping)}</span></div>
+    <div><span>Envío ${esc(zone().name)}</span><span>${shipTxt(t.shipping)}</span></div>
     <div class="big"><span>Total</span><span>${fmt(t.total)}</span></div></div>`;
 }
 
@@ -524,11 +566,12 @@ function paintCart() {
         <div><div style="font-weight:600;line-height:1.2">${esc(l.p.title)}</div><small>${l.size === 'ÚNICA' ? '' : esc(l.size) + ' · '}${fmt(price(l.p))}</small></div>
         <button class="rm" data-rm="${i}">Quitar</button></div>`).join('') + `
         <div class="lbl">Zona de envío</div>
-        <div class="zones">${Object.entries(SHIP).map(([k, v]) => `<button class="zone" data-zone="${k}" aria-pressed="${ui.zone === k}"><b>${v.label}</b><small>${fmt(v.cost)}</small></button>`).join('')}</div>
+        <select class="zsel" id="zoneSel" aria-label="Zona de envío">${ZONES.map((z) => `<option value="${esc(z.id)}" ${z.id === zone().id ? 'selected' : ''}>${esc(z.name)} · ${shipTxt(z.cost)}</option>`).join('')}</select>
         <div class="lbl">Código de descuento</div>
         <div class="code"><input id="codeIn" value="${esc(ui.code)}" placeholder="Opcional" autocomplete="off"><button data-code>Aplicar</button></div>
         ${ui.codeMsg ? `<div class="${ui.applied ? 'note' : 'err'}">${esc(ui.codeMsg)}</div>` : ''}
         ${summaryHtml(t)}
+        ${CHECKOUT === 'whatsapp' ? '<div class="note">Tu compra se completa por WhatsApp: en el siguiente paso envías tu pedido y coordinamos el pago y la entrega contigo.</div>' : ''}
         <button class="btn" style="margin-top:16px" data-step="data">Continuar</button>`;
     }
   } else if (ui.step === 'data') {
@@ -537,7 +580,8 @@ function paintCart() {
       <label class="field"><span>Dirección de entrega</span><textarea id="f_address" rows="3" maxlength="300" autocomplete="street-address">${esc(ui.form.address)}</textarea></label>
       ${ui.err ? `<div class="err">${esc(ui.err)}</div>` : ''}
       ${summaryHtml(t)}
-      <button class="btn" style="margin-top:16px" data-submit ${ui.busy ? 'disabled' : ''}>${ui.busy ? 'Creando pedido…' : 'Confirmar y pagar'}</button>
+      ${CHECKOUT === 'whatsapp' ? '<div class="note"><b>Importante:</b> tu compra se completará por WhatsApp. Al tocar el botón se abrirá la conversación con tu pedido y tus datos ya escritos; nosotros te confirmamos disponibilidad, total final y forma de pago. El total mostrado es estimado.</div>' : ''}
+      <button class="btn ${CHECKOUT === 'whatsapp' ? 'ok' : ''}" style="margin-top:16px" data-submit ${ui.busy ? 'disabled' : ''}>${CHECKOUT === 'whatsapp' ? 'Enviar pedido por WhatsApp' : (ui.busy ? 'Creando pedido…' : 'Confirmar y pagar')}</button>
       <button class="btn ghost" data-step="cart">Volver al carrito</button>`;
   } else if (ui.step === 'pay' && pending) {
     const banks = (settings.bankAccounts || []).filter((b) => b && b.accountNumber);
@@ -556,6 +600,11 @@ function paintCart() {
       <button class="btn" style="margin-top:16px" data-pay ${ui.busy ? 'disabled' : ''}>${ui.busy ? 'Enviando…' : 'Enviar comprobante'}</button>
       <div class="note">Entrega estimada: 24 a 72 horas después de confirmar tu pago.</div>
       <button class="btn ghost" data-cancel>Cancelar este pedido</button>`;
+  } else if (ui.step === 'done' && ui.doneWa) {
+    body = `<div class="done"><div class="ck">✓</div><h2>Ya casi: termina en WhatsApp</h2>
+      <p style="color:var(--ink2);margin-top:8px">Abrimos WhatsApp con tu pedido y tus datos. Solo toca enviar el mensaje y te atenderemos para confirmar y coordinar el pago y la entrega.</p>
+      <a class="btn ok" style="margin-top:18px;text-decoration:none" target="_blank" rel="noopener" href="${esc(ui.waUrl)}">Abrir WhatsApp otra vez</a>
+      <button class="btn ghost" data-close="dc">Seguir comprando</button></div>`;
   } else if (ui.step === 'done') {
     body = `<div class="done"><div class="ck">✓</div><h2>¡Recibimos tu comprobante!</h2>
       <p style="color:var(--ink2);margin-top:8px">Verificaremos tu pago y te escribiremos por WhatsApp para coordinar la entrega.</p>
@@ -581,8 +630,12 @@ const ORDER_ERR = {
   invalid_variant: () => 'Una de las opciones elegidas ya no existe. Revisa el carrito.',
   invalid_discount: () => 'El código de descuento ya no es válido. Quítalo e intenta de nuevo.',
   invalid_customer: () => 'Revisa tu nombre, teléfono y dirección.',
+  invalid_zone: () => 'La zona de envío elegida ya no está disponible. Elige otra.',
+  config_missing: () => 'La tienda aún no puede registrar pedidos. Escríbenos por WhatsApp para completar tu compra.',
+  create_failed: () => 'No pudimos registrar tu pedido. Intenta de nuevo en un momento.',
 };
 async function submitOrder() {
+  if (CHECKOUT === 'whatsapp') return sendWhatsApp();
   const f = ui.form;
   if (f.name.trim().length < 2 || f.phone.replace(/\D/g, '').length < 7 || f.address.trim().length < 5) {
     ui.err = 'Completa tu nombre, un teléfono válido y tu dirección.'; return paintCart();
@@ -591,14 +644,19 @@ async function submitOrder() {
   try {
     const r = await fetch('/api/order', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: cart.map((c) => ({ id: c.id, selectedSize: c.size })), customer: f, shippingZone: ui.zone, discountCode: ui.applied?.code || null }),
+      body: JSON.stringify({ items: cart.map((c) => ({ id: c.id, selectedSize: c.size })), customer: f, shippingZone: zone().id, discountCode: ui.applied?.code || null }),
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok || !data.order) { ui.err = (ORDER_ERR[data.error] || (() => 'No pudimos crear el pedido. Revisa tu conexión e intenta de nuevo.'))(data); ui.busy = false; return paintCart(); }
+    if (!r.ok || !data.order) {
+      const code = data.error || ('http ' + r.status);
+      dbg('PEDIDO RECHAZADO: ' + code + (data.detail ? ' | ' + data.detail : ''));
+      const base = r.status === 404 ? 'El registro de pedidos no está disponible todavía. Escríbenos por WhatsApp.' : (ORDER_ERR[data.error] || (() => 'No pudimos crear el pedido. Intenta de nuevo en un momento.'))(data);
+      ui.err = `${base} (código: ${code})`; ui.busy = false; return paintCart();
+    }
     pending = data.order; jset(K.pend, pending);
     cart = []; saveCart(); ui.applied = null; ui.code = ''; ui.codeMsg = ''; jdel(K.code);
     ui.busy = false; ui.step = 'pay'; paintCart(); showPending();
-  } catch { ui.err = 'Sin conexión. Intenta de nuevo.'; ui.busy = false; paintCart(); }
+  } catch (e) { dbg('PEDIDO SIN RESPUESTA: ' + (e && e.message)); ui.err = 'Sin conexión. Verifica tu internet e intenta de nuevo.'; ui.busy = false; paintCart(); }
 }
 
 // Reduce la foto del comprobante antes de subirla (más rápido en datos móviles)
@@ -658,11 +716,11 @@ document.addEventListener('click', (e) => {
   else if (g('cat') !== undefined) { cat = g('cat'); history.replaceState(null, '', cat === 'ALL' ? '/' : '?category=' + encodeURIComponent(cat)); renderChips(); renderGrid(); }
   else if (g('size') !== undefined) { pSize = g('size'); paintProduct(byId($('#dp [data-add]').dataset.add)); }
   else if (g('add')) addToCart(g('add'));
+  else if (g('wa')) { const p = byId(g('wa')); if (p) openWa(waLink(waProductMsg(p, pSize))); }
   else if (g('dot') !== undefined) { const h = $('#hero'); h.scrollTo({ left: +g('dot') * (h.clientWidth + 12), behavior: 'smooth' }); }
   else if (t.hasAttribute('data-popup')) openPopup();
   else if (g('usecode')) { if (useCode(g('usecode'))) closeDlg('dpop'); }
   else if (g('rm') !== undefined) { cart.splice(+g('rm'), 1); saveCart(); paintCart(); }
-  else if (g('zone')) { ui.zone = g('zone'); paintCart(); }
   else if (t.hasAttribute('data-code')) applyCode();
   else if (g('step')) { ui.err = ''; ui.step = g('step'); paintCart(); }
   else if (t.hasAttribute('data-submit')) submitOrder();
@@ -670,11 +728,13 @@ document.addEventListener('click', (e) => {
   else if (t.hasAttribute('data-cancel')) cancelOrder();
   else if (g('copy')) { navigator.clipboard?.writeText(g('copy')).then(() => toast('Número de cuenta copiado')).catch(() => toast('No se pudo copiar')); }
 });
+document.addEventListener('change', (e) => { if (e.target.id === 'zoneSel') { ui.zone = e.target.value; paintCart(); } });
 document.addEventListener('input', (e) => {
   const id = e.target.id;
   if (id === 'f_name') ui.form.name = e.target.value;
   else if (id === 'f_phone') ui.form.phone = e.target.value;
   else if (id === 'f_address') ui.form.address = e.target.value;
+  if (id && id.startsWith('f_') && ui.err) { ui.err = ''; document.querySelector('#dc .err')?.remove(); }
 });
 $('#dc').addEventListener('close', syncLock);
 $('#dpop').addEventListener('close', syncLock);
@@ -701,10 +761,12 @@ function init() {
   ]).then(([ps, st, cs, bs]) => {
     products = ps.docs.map((d) => ({ id: d.id, ...d.data() }));
     settings = st && st.exists ? st.data() : {};
+    const zl = (settings.shippingZones || []).filter((z) => z && z.id && z.name && Number.isFinite(Number(z.cost)) && Number(z.cost) >= 0).map((z) => ({ id: String(z.id), name: String(z.name), cost: Number(z.cost) }));
+    if (zl.length) { ZONES = zl; ui.zone = zl[0].id; }
     codes = cs ? cs.docs.map((d) => d.data()) : [];
     banners = bs ? bs.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => x.active && x.image) : [];
     cart = cart.filter((c) => byId(c.id)); saveCart();
-    dbg(`productos: ${products.length} | categorías: ${(settings.categories || []).length} | códigos: ${codes.length} | banners: ${banners.length}`);
+    dbg(`zonas de envío: ${ZONES.length} | productos: ${products.length} | categorías: ${(settings.categories || []).length} | códigos: ${codes.length} | banners: ${banners.length}`);
     restoreCode(); renderAll(); route();
     setTimeout(maybePopup, 700);
   }).catch((e) => {
