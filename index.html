@@ -77,6 +77,10 @@ header{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdro
 .card .ph img{width:100%;height:100%;object-fit:cover;transition:transform .35s}
 .card:hover .ph img{transform:scale(1.04)}
 .tag{position:absolute;left:8px;top:8px;background:var(--blue);color:#fff;font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px}
+.vend{font-size:12px;color:var(--ink2);margin-top:2px;line-height:1.25}
+.vh{margin:16px 0 2px;font-size:13px;color:var(--ink2);padding-top:6px;border-top:1px dashed var(--line)}
+.vh:first-child{margin-top:0;border-top:0;padding-top:0}
+.vh b{color:var(--ink)}
 .sold{position:absolute;inset:0;background:rgba(255,255,255,.72);display:grid;place-items:center;font-weight:700;color:var(--ink)}
 .card h3{font-size:15px;font-weight:500;margin-top:9px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .price{display:flex;align-items:baseline;gap:8px;margin-top:3px;font-weight:700;font-size:17px}
@@ -166,6 +170,8 @@ dialog[open]{animation:up .22s ease-out;display:flex;flex-direction:column}
 footer{background:var(--mist);border-top:1px solid var(--line);padding:26px 0 calc(26px + var(--safe));color:var(--ink2);font-size:14px}
 footer .wrap{display:flex;flex-wrap:wrap;gap:10px 22px;justify-content:space-between;align-items:center}
 footer a{color:var(--ink);text-decoration:none;font-weight:500}
+footer #waFoot{display:inline-flex;align-items:center;gap:7px;color:#128C4A}
+.btn .wa-ic{flex:none}
 footer nav{display:flex;gap:18px;flex-wrap:wrap}
 
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -259,19 +265,22 @@ footer nav{display:flex;gap:18px;flex-wrap:wrap}
 
 <script>
 /* ============ CONFIGURACIÓN ============
-   Estos valores los reemplaza configure.js en cada deploy de Vercel
-   (usa las variables FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY y WHATSAPP_NUMBER).
-   No los edites a mano salvo que no uses configure.js. */
+   El proyecto Firebase (FB) lo reemplaza configure.js en cada deploy de Vercel.
+   El número de WhatsApp (WA) está escrito aquí directamente: edítalo en esta línea si cambia. */
 const FB = {
   apiKey: 'AIzaSyB6YA-gSckDvi-fdFlRsvwRttr3VnGQ82U',
   authDomain: 'kuranic-b1034.firebaseapp.com',
   projectId: 'kuranic-b1034'
 };
-const WA = '50587091008';
+const WA = '50584016969'; // WhatsApp de la tienda (solo dígitos, con código de país)
 const IMGBB_KEY = 'B922654effe3a1ab5ac85cc4c23f97b8';
 // Zonas de envío: por defecto estas; si el admin guarda las suyas (settings/store.shippingZones) se usan esas.
 let ZONES = [{ id: 'managua', name: 'Managua', cost: 100 }, { id: 'departamentos', name: 'Departamentos', cost: 165 }];
-const zone = () => ZONES.find((z) => z.id === ui.zone) || ZONES[0];
+// Tiendas aliadas (settings/store.vendors): cada producto puede traer vendorId; cada tienda tiene sus propias zonas/costos.
+// Una tienda sin zonas propias usa las generales (ZONES). El flete se calcula por tienda y se suma.
+let VENDORS = [];
+const vendorOf = (p) => VENDORS.find((v) => v.id === p.vendorId) || null;
+const vzones = (v) => (v && v.shippingZones.length ? v.shippingZones : ZONES);
 const shipTxt = (n) => (n > 0 ? fmt(n) : 'Gratis');
 // Modo de compra:
 //   'whatsapp' = el pedido se arma aquí y se coordina por WhatsApp (no usa servidor ni claves)
@@ -320,6 +329,7 @@ const syncLock = () => document.documentElement.classList.toggle('lock', ['dp', 
 const goCatalog = () => $('#catalogo').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 const disc = (p) => (p.discountPrice > 0 && p.price > p.discountPrice ? Math.round((1 - p.discountPrice / p.price) * 100) : 0);
 
+const WA_ICON = '<svg class="wa-ic" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.4A9.93 9.93 0 1 0 12.04 2zm0 1.8a8.1 8.1 0 1 1-4.2 15.05l-.3-.18-3.1.82.83-3.03-.2-.31A8.1 8.1 0 0 1 12.04 3.8zM8.6 7.5c-.2 0-.5.07-.75.35-.26.28-1 1-1 2.4s1.03 2.8 1.17 3c.15.2 2.02 3.2 5 4.36 2.47.97 2.97.78 3.5.73.55-.05 1.75-.72 2-1.4.25-.7.25-1.3.17-1.42-.07-.12-.27-.2-.57-.35s-1.75-.87-2.03-.97c-.27-.1-.47-.15-.67.15s-.77.97-.95 1.17c-.17.2-.35.22-.65.07-.3-.15-1.27-.47-2.4-1.5-.9-.8-1.5-1.77-1.67-2.07-.17-.3 0-.47.13-.62.14-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.62-.92-2.2-.24-.58-.5-.5-.67-.5z"/></svg>';
 let toastT;
 function toast(msg, action) {
   const t = $('#toast');
@@ -336,14 +346,36 @@ const ui = { step: 'cart', zone: 'managua', code: '', applied: null, form: { nam
 
 const saveCart = () => { jset(K.cart, cart); $('#count').textContent = cart.length; };
 const byId = (id) => products.find((p) => p.id === id);
-const lines = () => cart.map((c) => ({ ...c, p: byId(c.id) })).filter((l) => l.p);
+const lines = () => cart.map((c, i) => ({ ...c, i, p: byId(c.id) })).filter((l) => l.p);
+function groups() {  // productos del carrito agrupados por tienda, en orden de aparición
+  const m = new Map();
+  lines().forEach((l) => {
+    const v = vendorOf(l.p), k = v ? v.id : '';
+    if (!m.has(k)) m.set(k, { key: k, vendor: v, name: v ? v.name : 'Kodiashop', lines: [] });
+    m.get(k).lines.push(l);
+  });
+  return [...m.values()];
+}
+function shipState() {  // zonas elegibles: las que cubre cada tienda del carrito; "ok" si TODAS llegan ahí
+  const gs = groups(), seen = new Map();
+  (gs.length ? gs : [{ vendor: null }]).forEach((g) => vzones(g.vendor).forEach((z) => { if (!seen.has(z.id)) seen.set(z.id, z.name); }));
+  const opts = [...seen].map(([id, name]) => {
+    const costs = gs.map((g) => { const z = vzones(g.vendor).find((x) => x.id === id); return z ? z.cost : null; });
+    return { id, name, costs, ok: costs.every((c) => c !== null), miss: gs.filter((_, i) => costs[i] === null).map((g) => g.name), total: costs.reduce((a, c) => a + (c || 0), 0) };
+  });
+  const sel = opts.find((o) => o.id === ui.zone && o.ok) || opts.find((o) => o.ok) || null;
+  if (sel) ui.zone = sel.id;
+  return { gs, opts, sel, blocked: gs.length > 0 && !sel };
+}
 
 function calc() {
-  const subtotal = lines().reduce((a, l) => a + Number(price(l.p) || 0), 0);
+  const subtotal = lines().reduce((acc, l) => acc + Number(price(l.p) || 0), 0);
   const a = ui.applied;
   const discount = a ? (a.type === 'percent' ? Math.round(subtotal * a.value / 100) : Math.min(a.value, subtotal)) : 0;
-  const shipping = subtotal > 0 ? zone().cost : 0;
-  return { subtotal, discount, shipping, total: subtotal - discount + shipping };
+  const st = shipState();
+  const ship = st.gs.map((g, i) => ({ key: g.key, name: g.name, cost: st.sel ? st.sel.costs[i] : 0 }));
+  const shipping = ship.reduce((acc, x) => acc + x.cost, 0);
+  return { subtotal, discount, shipping, ship, st, total: subtotal - discount + shipping };
 }
 
 /* ============ CATÁLOGO ============ */
@@ -362,12 +394,13 @@ function cardHtml(p) {
   return `<button class="card" data-open="${esc(p.id)}">
     <div class="ph">${imgTag(p.images?.[0], 600, p.title)}${d ? `<span class="tag">-${d}%</span>` : ''}${sold ? '<div class="sold">Agotado</div>' : ''}</div>
     <h3>${esc(p.title)}</h3>
+    ${vendorOf(p) ? `<div class="vend">Enviado por: ${esc(vendorOf(p).name)}</div>` : ''}
     <div class="price">${fmt(price(p))}${d ? `<s>${fmt(p.price)}</s>` : ''}</div></button>`;
 }
 function renderGrid() {
   const q = query.trim().toLowerCase();
   const list = products.filter((p) => (cat === 'ALL' || p.category === cat) &&
-    (!q || `${p.title} ${p.category || ''} ${p.sku || ''}`.toLowerCase().includes(q)));
+    (!q || `${p.title} ${p.category || ''} ${p.sku || ''} ${vendorOf(p)?.name || ''}`.toLowerCase().includes(q)));
   if (!list.length) {
     $('#grid').innerHTML = `<div class="state" style="grid-column:1/-1">${products.length ? 'No encontramos productos con esa búsqueda.' : 'Pronto tendremos productos nuevos.'}</div>`;
     return;
@@ -474,12 +507,13 @@ function paintProduct(p) {
       <div class="gal">${(p.images?.length ? p.images : ['']).map((u, i) => imgTag(u, 1200, `${p.title} ${i + 1}`)).join('')}</div>
       <div>
         <h2>${esc(p.title)}</h2>
+        ${vendorOf(p) ? `<div class="vend" style="font-size:13px">Enviado por: ${esc(vendorOf(p).name)}</div>` : ''}
         <div class="price">${fmt(price(p))}${d ? `<s>${fmt(p.price)}</s> <span class="tag" style="position:static">-${d}%</span>` : ''}</div>
         ${sizes.length > 1 || sizes[0] !== 'ÚNICA' ? `<div class="lbl">Elige una opción</div>
           <div class="sizes">${sizes.map((s) => `<button class="size" data-size="${esc(s)}" aria-pressed="${pSize === s}" ${stockOf(p, s) <= 0 ? 'disabled' : ''}>${esc(s)}</button>`).join('')}</div>` : ''}
         <div id="perr"></div>
         <button class="btn" style="margin-top:18px" data-add="${esc(p.id)}" ${sold ? 'disabled' : ''}>${sold ? 'Agotado' : 'Agregar al carrito'}</button>
-        <button class="btn wa" style="margin-top:10px" data-wa="${esc(p.id)}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.2 14.3c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.8s.7-2 .9-2.3c.3-.3.6-.3.8-.3h.6c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .6l-.4.6c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1.1c.2-.3.4-.2.7-.1l2 .9c.3.1.5.2.5.4.1.2.1.8-.2 1.5z"/></svg>${sold ? 'Consultar disponibilidad' : 'Consultar por WhatsApp'}</button>
+        <button class="btn wa" style="margin-top:10px" data-wa="${esc(p.id)}">${WA_ICON}${sold ? 'Consultar disponibilidad' : 'Consultar por WhatsApp'}</button>
         ${p.description ? `<p class="desc">${esc(p.description)}</p>` : ''}
         ${det ? `<div class="lbl">Detalles</div><p class="desc" style="margin-top:6px">${esc(det)}</p>` : ''}
       </div></div></div>`;
@@ -512,16 +546,20 @@ function route() {
 const productUrl = (id) => `${location.origin}/producto/${encodeURIComponent(id)}`;
 function waProductMsg(p, size) {
   const opt = size && size !== 'ÚNICA' ? ` (${size})` : '';
-  return `Hola Kodiashop, quiero consultar por este producto:\n\n*${p.title}*${opt}\nPrecio: ${fmt(price(p))}\n${productUrl(p.id)}\n\n¿Está disponible?`;
+  return `Hola Kodiashop, quiero consultar por este producto:\n\n*${p.title}*${opt}\n${vendorOf(p) ? 'Enviado por: ' + vendorOf(p).name + '\n' : ''}Precio: ${fmt(price(p))}\n${productUrl(p.id)}\n\n¿Está disponible?`;
 }
 function waOrderMsg() {
-  const grouped = {};
-  lines().forEach((l) => { const k = l.id + '|' + l.size; (grouped[k] = grouped[k] || { ...l, n: 0 }).n++; });
-  const items = Object.values(grouped).map((l) => `• ${l.n} x ${l.p.title}${l.size !== 'ÚNICA' ? ' (' + l.size + ')' : ''} — ${fmt(price(l.p))}`).join('\n');
-  const t = calc(), f = ui.form;
-  return `Hola Kodiashop, quiero hacer este pedido:\n\n${items}\n\nSubtotal: ${fmt(t.subtotal)}`
+  const t = calc(), f = ui.form, gs = t.st.gs, tag = gs.some((g) => g.vendor) || gs.length > 1, zn = t.st.sel ? t.st.sel.name : '';
+  const itemsOf = (g) => {
+    const grouped = {};
+    g.lines.forEach((l) => { const k = l.id + '|' + l.size; (grouped[k] = grouped[k] || { ...l, n: 0 }).n++; });
+    return Object.values(grouped).map((l) => `• ${l.n} x ${l.p.title}${l.size !== 'ÚNICA' ? ' (' + l.size + ')' : ''} — ${fmt(price(l.p))}`).join('\n');
+  };
+  const body = gs.map((g, i) => (tag ? `*Enviado por: ${g.name}*\n` : '') + itemsOf(g) + (tag ? `\nEnvío (${zn}): ${shipTxt(t.ship[i].cost)}` : '')).join('\n\n');
+  return `Hola Kodiashop, quiero hacer este pedido:\n\n${body}\n\nSubtotal: ${fmt(t.subtotal)}`
     + (t.discount ? `\nDescuento (${ui.applied.code}): -${fmt(t.discount)}` : '')
-    + `\nEnvío (${zone().name}): ${shipTxt(t.shipping)}\n*Total estimado: ${fmt(t.total)}*`
+    + (!tag ? `\nEnvío (${zn}): ${shipTxt(t.shipping)}` : (gs.length > 1 ? `\nEnvío total: ${shipTxt(t.shipping)}` : ''))
+    + `\n*Total estimado: ${fmt(t.total)}*`
     + `\n\nMis datos:\nNombre: ${f.name.trim()}\nTeléfono: ${f.phone.trim()}\nDirección: ${f.address.trim()}`
     + `\n\nQuedo atento para coordinar el pago y la entrega.`;
 }
@@ -551,7 +589,7 @@ function summaryHtml(t) {
   return `<div class="tot">
     <div><span>Subtotal</span><span>${fmt(t.subtotal)}</span></div>
     ${t.discount ? `<div><span>Descuento${ui.applied ? ' ' + esc(ui.applied.code) : ''}</span><span>-${fmt(t.discount)}</span></div>` : ''}
-    <div><span>Envío ${esc(zone().name)}</span><span>${shipTxt(t.shipping)}</span></div>
+    ${t.ship.length > 1 ? t.ship.map((x) => `<div><span>Envío · ${esc(x.name)}</span><span>${shipTxt(x.cost)}</span></div>`).join('') : `<div><span>Envío ${t.st.sel ? esc(t.st.sel.name) : ''}</span><span>${shipTxt(t.shipping)}</span></div>`}
     <div class="big"><span>Total</span><span>${fmt(t.total)}</span></div></div>`;
 }
 
@@ -562,17 +600,20 @@ function paintCart() {
     if (!L.length) {
       body = `<div class="state">Tu carrito está vacío.<br><button class="btn alt" data-close="dc">Ver productos</button></div>`;
     } else {
-      body = L.map((l, i) => `<div class="row">${imgTag(l.p.images?.[0], 600, l.p.title)}
+      const rowHtml = (l) => `<div class="row">${imgTag(l.p.images?.[0], 600, l.p.title)}
         <div><div style="font-weight:600;line-height:1.2">${esc(l.p.title)}</div><small>${l.size === 'ÚNICA' ? '' : esc(l.size) + ' · '}${fmt(price(l.p))}</small></div>
-        <button class="rm" data-rm="${i}">Quitar</button></div>`).join('') + `
+        <button class="rm" data-rm="${l.i}">Quitar</button></div>`;
+      const gs = t.st.gs, tagged = gs.length > 1 || gs.some((g) => g.vendor);
+      body = gs.map((g) => (tagged ? `<div class="vh">Enviado por: <b>${esc(g.name)}</b></div>` : '') + g.lines.map(rowHtml).join('')).join('') + `
         <div class="lbl">Zona de envío</div>
-        <select class="zsel" id="zoneSel" aria-label="Zona de envío">${ZONES.map((z) => `<option value="${esc(z.id)}" ${z.id === zone().id ? 'selected' : ''}>${esc(z.name)} · ${shipTxt(z.cost)}</option>`).join('')}</select>
+        <select class="zsel" id="zoneSel" aria-label="Zona de envío">${t.st.opts.map((o) => `<option value="${esc(o.id)}" ${t.st.sel && o.id === t.st.sel.id ? 'selected' : ''} ${o.ok ? '' : 'disabled'}>${esc(o.name)} · ${o.ok ? shipTxt(o.total) : 'no disponible: ' + esc(o.miss.join(', '))}</option>`).join('')}</select>
+        ${t.st.blocked ? '<div class="err">Las tiendas de tu carrito no envían a una misma zona. Compra sus productos por separado.</div>' : ''}
         <div class="lbl">Código de descuento</div>
         <div class="code"><input id="codeIn" value="${esc(ui.code)}" placeholder="Opcional" autocomplete="off"><button data-code>Aplicar</button></div>
         ${ui.codeMsg ? `<div class="${ui.applied ? 'note' : 'err'}">${esc(ui.codeMsg)}</div>` : ''}
         ${summaryHtml(t)}
         ${CHECKOUT === 'whatsapp' ? '<div class="note">Tu compra se completa por WhatsApp: en el siguiente paso envías tu pedido y coordinamos el pago y la entrega contigo.</div>' : ''}
-        <button class="btn" style="margin-top:16px" data-step="data">Continuar</button>`;
+        <button class="btn" style="margin-top:16px" data-step="data" ${t.st.blocked ? 'disabled' : ''}>Continuar</button>`;
     }
   } else if (ui.step === 'data') {
     body = `<label class="field"><span>Nombre completo</span><input id="f_name" value="${esc(ui.form.name)}" autocomplete="name" maxlength="80"></label>
@@ -581,7 +622,7 @@ function paintCart() {
       ${ui.err ? `<div class="err">${esc(ui.err)}</div>` : ''}
       ${summaryHtml(t)}
       ${CHECKOUT === 'whatsapp' ? '<div class="note"><b>Importante:</b> tu compra se completará por WhatsApp. Al tocar el botón se abrirá la conversación con tu pedido y tus datos ya escritos; nosotros te confirmamos disponibilidad, total final y forma de pago. El total mostrado es estimado.</div>' : ''}
-      <button class="btn ${CHECKOUT === 'whatsapp' ? 'ok' : ''}" style="margin-top:16px" data-submit ${ui.busy ? 'disabled' : ''}>${CHECKOUT === 'whatsapp' ? 'Enviar pedido por WhatsApp' : (ui.busy ? 'Creando pedido…' : 'Confirmar y pagar')}</button>
+      <button class="btn ${CHECKOUT === 'whatsapp' ? 'ok' : ''}" style="margin-top:16px" data-submit ${ui.busy || t.st.blocked ? 'disabled' : ''}>${CHECKOUT === 'whatsapp' ? WA_ICON + 'Enviar pedido por WhatsApp' : (ui.busy ? 'Creando pedido…' : 'Confirmar y pagar')}</button>
       <button class="btn ghost" data-step="cart">Volver al carrito</button>`;
   } else if (ui.step === 'pay' && pending) {
     const banks = (settings.bankAccounts || []).filter((b) => b && b.accountNumber);
@@ -592,7 +633,7 @@ function paintCart() {
         <div><b>${esc(b.name)}</b> <small>${esc(b.currency || 'C$')} · ${esc(b.holder || '')}</small><code>${esc(b.accountNumber)}</code></div>
         <button class="cp" data-copy="${esc(b.accountNumber)}">Copiar</button></div>`).join('')
         : `<div class="note">Aún no hay cuentas bancarias disponibles. Escríbenos por WhatsApp y te las enviamos.</div>
-           <a class="btn ok" style="margin-top:10px;text-decoration:none" target="_blank" rel="noopener" href="${waLink(`Hola, hice el pedido ${pending.orderNumber} por ${fmt(pending.total)} y necesito los datos para pagar.`)}">Pedir cuentas por WhatsApp</a>`}
+           <a class="btn ok" style="margin-top:10px;text-decoration:none" target="_blank" rel="noopener" href="${waLink(`Hola, hice el pedido ${pending.orderNumber} por ${fmt(pending.total)} y necesito los datos para pagar.`)}">${WA_ICON}Pedir cuentas por WhatsApp</a>`}
       <div class="step-t">2. Sube tu comprobante</div>
       <label class="field"><span>Foto o captura de la transferencia</span><input id="f_file" type="file" accept="image/*"></label>
       <label class="field"><span>Número de referencia (opcional)</span><input id="f_ref" value="${esc(ui.ref)}" maxlength="60" inputmode="numeric"></label>
@@ -603,13 +644,13 @@ function paintCart() {
   } else if (ui.step === 'done' && ui.doneWa) {
     body = `<div class="done"><div class="ck">✓</div><h2>Ya casi: termina en WhatsApp</h2>
       <p style="color:var(--ink2);margin-top:8px">Abrimos WhatsApp con tu pedido y tus datos. Solo toca enviar el mensaje y te atenderemos para confirmar y coordinar el pago y la entrega.</p>
-      <a class="btn ok" style="margin-top:18px;text-decoration:none" target="_blank" rel="noopener" href="${esc(ui.waUrl)}">Abrir WhatsApp otra vez</a>
+      <a class="btn ok" style="margin-top:18px;text-decoration:none" target="_blank" rel="noopener" href="${esc(ui.waUrl)}">${WA_ICON}Abrir WhatsApp otra vez</a>
       <button class="btn ghost" data-close="dc">Seguir comprando</button></div>`;
   } else if (ui.step === 'done') {
     body = `<div class="done"><div class="ck">✓</div><h2>¡Recibimos tu comprobante!</h2>
       <p style="color:var(--ink2);margin-top:8px">Verificaremos tu pago y te escribiremos por WhatsApp para coordinar la entrega.</p>
       <p style="margin-top:12px">Pedido <b>${esc(ui.doneNo)}</b></p>
-      <a class="btn ok" style="margin-top:18px;text-decoration:none" target="_blank" rel="noopener" href="${waLink(`Hola, acabo de enviar mi comprobante del pedido ${ui.doneNo}.`)}">Avisar por WhatsApp</a>
+      <a class="btn ok" style="margin-top:18px;text-decoration:none" target="_blank" rel="noopener" href="${waLink(`Hola, acabo de enviar mi comprobante del pedido ${ui.doneNo}.`)}">${WA_ICON}Avisar por WhatsApp</a>
       <button class="btn ghost" data-close="dc">Seguir comprando</button></div>`;
   } else { ui.step = 'cart'; return paintCart(); }
   d.innerHTML = `<div class="dh"><span>${STEP_T[ui.step]}</span><button class="x" data-close="dc" aria-label="Cerrar">×</button></div><div class="db">${body}</div>`;
@@ -631,6 +672,7 @@ const ORDER_ERR = {
   invalid_discount: () => 'El código de descuento ya no es válido. Quítalo e intenta de nuevo.',
   invalid_customer: () => 'Revisa tu nombre, teléfono y dirección.',
   invalid_zone: () => 'La zona de envío elegida ya no está disponible. Elige otra.',
+  zone_not_served: (d) => `${d.vendor || 'Una tienda'} no envía a esa zona. Elige otra zona o compra por separado.`,
   config_missing: () => 'La tienda aún no puede registrar pedidos. Escríbenos por WhatsApp para completar tu compra.',
   create_failed: () => 'No pudimos registrar tu pedido. Intenta de nuevo en un momento.',
 };
@@ -644,7 +686,7 @@ async function submitOrder() {
   try {
     const r = await fetch('/api/order', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: cart.map((c) => ({ id: c.id, selectedSize: c.size })), customer: f, shippingZone: zone().id, discountCode: ui.applied?.code || null }),
+      body: JSON.stringify({ items: cart.map((c) => ({ id: c.id, selectedSize: c.size })), customer: f, shippingZone: calc().st.sel ? calc().st.sel.id : '', discountCode: ui.applied?.code || null }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok || !data.order) {
@@ -743,6 +785,7 @@ $('#dpop').addEventListener('close', syncLock);
 function init() {
   $('#yr').textContent = new Date().getFullYear();
   $('#waFoot').href = waLink('Hola Kodiashop, quiero más información.');
+  $('#waFoot').innerHTML = WA_ICON + 'WhatsApp';
   saveCart(); showPending();
   $('#openCart').onclick = () => openCart();
   $('#resume').onclick = () => openCart('pay');
@@ -763,10 +806,13 @@ function init() {
     settings = st && st.exists ? st.data() : {};
     const zl = (settings.shippingZones || []).filter((z) => z && z.id && z.name && Number.isFinite(Number(z.cost)) && Number(z.cost) >= 0).map((z) => ({ id: String(z.id), name: String(z.name), cost: Number(z.cost) }));
     if (zl.length) { ZONES = zl; ui.zone = zl[0].id; }
+    const okZ = (z) => z && z.id && z.name && Number.isFinite(Number(z.cost)) && Number(z.cost) >= 0;
+    VENDORS = (Array.isArray(settings.vendors) ? settings.vendors : []).filter((v) => v && v.id && v.name)
+      .map((v) => ({ id: String(v.id), name: String(v.name), shippingZones: (v.shippingZones || []).filter(okZ).map((z) => ({ id: String(z.id), name: String(z.name), cost: Number(z.cost) })) }));
     codes = cs ? cs.docs.map((d) => d.data()) : [];
     banners = bs ? bs.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => x.active && x.image) : [];
     cart = cart.filter((c) => byId(c.id)); saveCart();
-    dbg(`zonas de envío: ${ZONES.length} | productos: ${products.length} | categorías: ${(settings.categories || []).length} | códigos: ${codes.length} | banners: ${banners.length}`);
+    dbg(`tiendas: ${VENDORS.length} | zonas de envío: ${ZONES.length} | productos: ${products.length} | categorías: ${(settings.categories || []).length} | códigos: ${codes.length} | banners: ${banners.length}`);
     restoreCode(); renderAll(); route();
     setTimeout(maybePopup, 700);
   }).catch((e) => {
