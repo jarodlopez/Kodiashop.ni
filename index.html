@@ -182,17 +182,17 @@ footer nav{display:flex;gap:18px;flex-wrap:wrap}
 /* Hero de novedades */
 .hero2{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:12px;scrollbar-width:none;margin-top:18px;border-radius:20px}
 .hero2::-webkit-scrollbar{display:none}
-.slide{flex:none;width:100%;scroll-snap-align:center;display:grid;background:linear-gradient(135deg,var(--ink) 0%,#0b2a6b 55%,var(--blue-d) 100%);color:#fff;border-radius:20px;overflow:hidden}
-.slide .si{aspect-ratio:16/11;background:#0b2a6b}
-.slide .si{position:relative;overflow:hidden}
+.slide{flex:none;width:100%;scroll-snap-align:center;position:relative;display:flex;align-items:flex-end;min-height:clamp(340px,92vw,440px);background:#0b2a6b;color:#fff;border-radius:20px;overflow:hidden}
+.slide .si{position:absolute;inset:0;background:#0b2a6b;overflow:hidden}
 .slide .si img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.slide .st{padding:20px 20px 24px;display:flex;flex-direction:column;justify-content:center;gap:10px;align-items:flex-start}
-.slide .kick{background:#fff;color:var(--blue);font-weight:700;font-size:13px;padding:4px 12px;border-radius:999px}
+.slide .si::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,16,36,0) 25%,rgba(8,16,36,.55) 60%,rgba(8,16,36,.92) 100%)}
+.slide .st{position:relative;z-index:1;width:100%;padding:20px 20px 24px;display:flex;flex-direction:column;justify-content:flex-end;gap:10px;align-items:flex-start;text-shadow:0 1px 8px rgba(0,0,0,.35)}
+.slide .kick{background:#fff;color:var(--blue);font-weight:700;font-size:13px;padding:4px 12px;border-radius:999px;text-shadow:none}
 .slide h2{font-size:clamp(26px,5vw,44px);line-height:1.05;letter-spacing:-.03em;max-width:16ch}
-.slide .sp{font-size:22px;font-weight:700}.slide .sp s{font-weight:400;font-size:15px;opacity:.7;margin-left:8px}
-.slide .btn{width:auto;background:#fff;color:var(--blue);padding:12px 22px}
+.slide .sp{font-size:22px;font-weight:700}.slide .sp s{font-weight:400;font-size:15px;opacity:.75;margin-left:8px}
+.slide .btn{width:auto;background:#fff;color:var(--blue);padding:12px 22px;text-shadow:none}
 .slide .btn:hover{background:var(--sky)}
-@media(min-width:760px){.slide{grid-template-columns:1fr 1fr;height:clamp(340px,34vw,440px)}.slide .si{aspect-ratio:auto;order:2}.slide .st{padding:40px 44px}}
+@media(min-width:760px){.slide{height:clamp(340px,34vw,440px);min-height:0;align-items:center}.slide .si::after{background:linear-gradient(90deg,rgba(8,16,36,.9) 0%,rgba(8,16,36,.62) 42%,rgba(8,16,36,0) 78%)}.slide .st{width:55%;padding:40px 44px;justify-content:center}}
 .dots{display:flex;justify-content:center;gap:8px;margin-top:12px}
 .dots button{width:10px;height:10px;border-radius:5px;background:var(--line);padding:0;transition:width .2s,background .2s}
 .dots button[aria-current=true]{background:var(--blue);width:24px}
@@ -394,7 +394,6 @@ function cardHtml(p) {
   return `<button class="card" data-open="${esc(p.id)}">
     <div class="ph">${imgTag(p.images?.[0], 600, p.title)}${d ? `<span class="tag">-${d}%</span>` : ''}${sold ? '<div class="sold">Agotado</div>' : ''}</div>
     <h3>${esc(p.title)}</h3>
-    ${vendorOf(p) ? `<div class="vend">Enviado por: ${esc(vendorOf(p).name)}</div>` : ''}
     <div class="price">${fmt(price(p))}${d ? `<s>${fmt(p.price)}</s>` : ''}</div></button>`;
 }
 function renderGrid() {
