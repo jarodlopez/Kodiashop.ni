@@ -73,6 +73,7 @@ header{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);backdro
 @media(min-width:700px){.grid{grid-template-columns:repeat(3,1fr);gap:26px 18px}}
 @media(min-width:1000px){.grid{grid-template-columns:repeat(4,1fr)}}
 .card{text-align:left;display:block;width:100%;padding:0;align-self:start;font:inherit;color:inherit}
+.tag.pre{top:auto;bottom:8px;background:#b45309}
 .card .ph{position:relative;aspect-ratio:4/5;border-radius:var(--r);background:var(--mist);overflow:hidden}
 .card .ph img{width:100%;height:100%;object-fit:cover;transition:transform .35s}
 .card:hover .ph img{transform:scale(1.04)}
@@ -327,6 +328,9 @@ const codeText = (c) => (c.type === 'percent' ? `${c.value}% de descuento` : `${
 const publicCodes = () => codes.filter((c) => validCode(c) && c.showOnHome !== false);
 const syncLock = () => document.documentElement.classList.toggle('lock', ['dp', 'dc', 'dpop'].some((i) => $('#' + i).open));
 const goCatalog = () => $('#catalogo').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+const isPre = (p) => !!p.preorder;  // producto en pre-orden (traído de Amazon)
+const preDep = (p) => Math.min(100, Math.max(10, Number(p.preorderDeposit) || 50));  // % mínimo de abono
+const preEta = (p) => (p.preorderEta && String(p.preorderEta).trim()) || '3 a 7 días hábiles';
 const disc = (p) => (p.discountPrice > 0 && p.price > p.discountPrice ? Math.round((1 - p.discountPrice / p.price) * 100) : 0);
 
 const WA_ICON = '<svg class="wa-ic" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.4A9.93 9.93 0 1 0 12.04 2zm0 1.8a8.1 8.1 0 1 1-4.2 15.05l-.3-.18-3.1.82.83-3.03-.2-.31A8.1 8.1 0 0 1 12.04 3.8zM8.6 7.5c-.2 0-.5.07-.75.35-.26.28-1 1-1 2.4s1.03 2.8 1.17 3c.15.2 2.02 3.2 5 4.36 2.47.97 2.97.78 3.5.73.55-.05 1.75-.72 2-1.4.25-.7.25-1.3.17-1.42-.07-.12-.27-.2-.57-.35s-1.75-.87-2.03-.97c-.27-.1-.47-.15-.67.15s-.77.97-.95 1.17c-.17.2-.35.22-.65.07-.3-.15-1.27-.47-2.4-1.5-.9-.8-1.5-1.77-1.67-2.07-.17-.3 0-.47.13-.62.14-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.62-.92-2.2-.24-.58-.5-.5-.67-.5z"/></svg>';
@@ -342,7 +346,7 @@ function toast(msg, action) {
 let db, products = [], settings = {}, codes = [], banners = [], cat = 'ALL', query = '';
 let cart = jget(K.cart, []);                 // [{ id, size }]
 let pending = jget(K.pend, null);            // orden creada, pendiente de pago
-const ui = { step: 'cart', zone: 'managua', code: '', applied: null, form: { name: '', phone: '', address: '' }, err: '', busy: false, file: null, ref: '', codeMsg: '' };
+const ui = { pay: 'dep', step: 'cart', zone: 'managua', code: '', applied: null, form: { name: '', phone: '', address: '' }, err: '', busy: false, file: null, ref: '', codeMsg: '' };
 
 const saveCart = () => { jset(K.cart, cart); $('#count').textContent = cart.length; };
 const byId = (id) => products.find((p) => p.id === id);
@@ -369,13 +373,21 @@ function shipState() {  // zonas elegibles: las que cubre cada tienda del carrit
 }
 
 function calc() {
-  const subtotal = lines().reduce((acc, l) => acc + Number(price(l.p) || 0), 0);
+  const L = lines();
+  const subtotal = L.reduce((acc, l) => acc + Number(price(l.p) || 0), 0);
   const a = ui.applied;
   const discount = a ? (a.type === 'percent' ? Math.round(subtotal * a.value / 100) : Math.min(a.value, subtotal)) : 0;
   const st = shipState();
   const ship = st.gs.map((g, i) => ({ key: g.key, name: g.name, cost: st.sel ? st.sel.costs[i] : 0 }));
   const shipping = ship.reduce((acc, x) => acc + x.cost, 0);
-  return { subtotal, discount, shipping, ship, st, total: subtotal - discount + shipping };
+  const total = subtotal - discount + shipping;
+  // Pre-orden: solo se puede pagar un carrito de pre-órdenes (no se mezcla con productos en stock)
+  const pres = L.filter((l) => isPre(l.p)), pre = pres.length > 0, mixed = pre && pres.length < L.length;
+  const pct = pre ? Math.max(...pres.map((l) => preDep(l.p))) : 100;
+  const depAmt = Math.min(total, Math.ceil(total * pct / 100));
+  const dep = pre && pct < 100 && ui.pay !== 'full';
+  const payNow = dep ? depAmt : total;
+  return { subtotal, discount, shipping, ship, st, total, pre, mixed, pct, depAmt, dep, payNow, balance: total - payNow, eta: pre ? preEta(pres[0].p) : '' };
 }
 
 /* ============ CATÁLOGO ============ */
@@ -392,7 +404,7 @@ function renderChips() {
 function cardHtml(p) {
   const d = disc(p), sold = isSold(p);
   return `<button class="card" data-open="${esc(p.id)}">
-    <div class="ph">${imgTag(p.images?.[0], 600, p.title)}${d ? `<span class="tag">-${d}%</span>` : ''}${sold ? '<div class="sold">Agotado</div>' : ''}</div>
+    <div class="ph">${imgTag(p.images?.[0], 600, p.title)}${d ? `<span class="tag">-${d}%</span>` : ''}${isPre(p) && !sold ? '<span class="tag pre">Pre-orden</span>' : ''}${sold ? '<div class="sold">Agotado</div>' : ''}</div>
     <h3>${esc(p.title)}</h3>
     <div class="price">${fmt(price(p))}${d ? `<s>${fmt(p.price)}</s>` : ''}</div></button>`;
 }
@@ -416,7 +428,7 @@ function renderHero() {
   const slides = [
     ...(settings.heroSlides || []).filter((x) => x.image).map((x) => ({ img: x.image, kick: x.subtitle || 'Destacado', title: x.title || '', cta: x.cta || 'Ver colección',
       attr: x.categoryTarget ? `data-cat="${esc(x.categoryTarget)}" data-go="catalogo"` : 'data-go="catalogo"' })),
-    ...newest().map((p) => ({ img: p.images[0], kick: 'Novedad', title: p.title, price: price(p), old: disc(p) ? p.price : 0, cta: 'Ver producto', attr: `data-open="${esc(p.id)}"` })),
+    ...newest().map((p) => ({ img: p.images[0], kick: isPre(p) ? 'Pre-orden' : 'Novedad', title: p.title, price: price(p), old: disc(p) ? p.price : 0, cta: 'Ver producto', attr: `data-open="${esc(p.id)}"` })),
   ];
   const sec = $('#novedades'); sec.hidden = !slides.length; if (!slides.length) return;
   $('#hero').innerHTML = slides.map((x, i) => `<article class="slide" aria-label="${i + 1} de ${slides.length}">
@@ -508,10 +520,11 @@ function paintProduct(p) {
         <h2>${esc(p.title)}</h2>
         ${vendorOf(p) ? `<div class="vend" style="font-size:13px">Enviado por: ${esc(vendorOf(p).name)}</div>` : ''}
         <div class="price">${fmt(price(p))}${d ? `<s>${fmt(p.price)}</s> <span class="tag" style="position:static">-${d}%</span>` : ''}</div>
+        ${isPre(p) ? `<div class="note"><b>Pre-orden · traído de Amazon</b><br>Entrega estimada: ${esc(preEta(p))} después de la compra. Puedes pagar el total${preDep(p) < 100 ? ` o abonar desde el ${preDep(p)}% (${fmt(Math.ceil(price(p) * preDep(p) / 100))})` : ''}${preDep(p) < 100 ? ' y pagar el saldo antes de la entrega' : ''}.</div>` : ''}
         ${sizes.length > 1 || sizes[0] !== 'ÚNICA' ? `<div class="lbl">Elige una opción</div>
           <div class="sizes">${sizes.map((s) => `<button class="size" data-size="${esc(s)}" aria-pressed="${pSize === s}" ${stockOf(p, s) <= 0 ? 'disabled' : ''}>${esc(s)}</button>`).join('')}</div>` : ''}
         <div id="perr"></div>
-        <button class="btn" style="margin-top:18px" data-add="${esc(p.id)}" ${sold ? 'disabled' : ''}>${sold ? 'Agotado' : 'Agregar al carrito'}</button>
+        <button class="btn" style="margin-top:18px" data-add="${esc(p.id)}" ${sold ? 'disabled' : ''}>${sold ? 'Agotado' : isPre(p) ? 'Pre-ordenar' : 'Agregar al carrito'}</button>
         <button class="btn wa" style="margin-top:10px" data-wa="${esc(p.id)}">${WA_ICON}${sold ? 'Consultar disponibilidad' : 'Consultar por WhatsApp'}</button>
         ${p.description ? `<p class="desc">${esc(p.description)}</p>` : ''}
         ${det ? `<div class="lbl">Detalles</div><p class="desc" style="margin-top:6px">${esc(det)}</p>` : ''}
@@ -522,8 +535,12 @@ function addToCart(id) {
   if (!pSize) { $('#perr').innerHTML = '<div class="err">Elige una opción antes de agregar.</div>'; return; }
   const inCart = cart.filter((c) => c.id === id && c.size === pSize).length;
   if (inCart + 1 > stockOf(p, pSize)) { $('#perr').innerHTML = '<div class="err">Ya tienes todas las unidades disponibles en el carrito.</div>'; return; }
+  const cur = lines();
+  if (cur.length && cur.some((l) => isPre(l.p)) !== isPre(p)) {
+    $('#perr').innerHTML = `<div class="err">${isPre(p) ? 'Las pre-órdenes se compran por separado. Termina tu pedido actual o vacía el carrito para pre-ordenar este producto.' : 'Tienes pre-órdenes en tu carrito. Termina ese pedido primero para comprar este producto.'}</div>`; return;
+  }
   cart.push({ id, size: pSize }); saveCart();
-  toast('Agregado al carrito', { label: 'Ver carrito', fn: () => { closeDlg('dp'); openCart(); } });
+  toast(isPre(p) ? 'Pre-orden agregada' : 'Agregado al carrito', { label: 'Ver carrito', fn: () => { closeDlg('dp'); openCart(); } });
   $('#perr').innerHTML = '';
 }
 function closeDlg(id) { const d = $('#' + id); if (d.open) d.close(); }
@@ -545,7 +562,7 @@ function route() {
 const productUrl = (id) => `${location.origin}/producto/${encodeURIComponent(id)}`;
 function waProductMsg(p, size) {
   const opt = size && size !== 'ÚNICA' ? ` (${size})` : '';
-  return `Hola Kodiashop, quiero consultar por este producto:\n\n*${p.title}*${opt}\n${vendorOf(p) ? 'Enviado por: ' + vendorOf(p).name + '\n' : ''}Precio: ${fmt(price(p))}\n${productUrl(p.id)}\n\n¿Está disponible?`;
+  return `Hola Kodiashop, quiero consultar por este producto:\n\n*${p.title}*${opt}\n${vendorOf(p) ? 'Enviado por: ' + vendorOf(p).name + '\n' : ''}Precio: ${fmt(price(p))}\n${isPre(p) ? `Pre-orden (traído de Amazon): entrega estimada ${preEta(p)} después de la compra\n` : ''}${productUrl(p.id)}\n\n¿Está disponible?`;
 }
 function waOrderMsg() {
   const t = calc(), f = ui.form, gs = t.st.gs, tag = gs.some((g) => g.vendor) || gs.length > 1, zn = t.st.sel ? t.st.sel.name : '';
@@ -555,10 +572,11 @@ function waOrderMsg() {
     return Object.values(grouped).map((l) => `• ${l.n} x ${l.p.title}${l.size !== 'ÚNICA' ? ' (' + l.size + ')' : ''} — ${fmt(price(l.p))}`).join('\n');
   };
   const body = gs.map((g, i) => (tag ? `*Enviado por: ${g.name}*\n` : '') + itemsOf(g) + (tag ? `\nEnvío (${zn}): ${shipTxt(t.ship[i].cost)}` : '')).join('\n\n');
-  return `Hola Kodiashop, quiero hacer este pedido:\n\n${body}\n\nSubtotal: ${fmt(t.subtotal)}`
+  return `Hola Kodiashop, quiero hacer ${t.pre ? 'esta *PRE-ORDEN* (productos traídos de Amazon)' : 'este pedido'}:\n\n${body}\n\nSubtotal: ${fmt(t.subtotal)}`
     + (t.discount ? `\nDescuento (${ui.applied.code}): -${fmt(t.discount)}` : '')
     + (!tag ? `\nEnvío (${zn}): ${shipTxt(t.shipping)}` : (gs.length > 1 ? `\nEnvío total: ${shipTxt(t.shipping)}` : ''))
     + `\n*Total estimado: ${fmt(t.total)}*`
+    + (t.pre ? `\n\n*Modalidad:* ${t.dep ? 'Abono del ' + t.pct + '%' : 'Pago total'}\n*Pago ahora:* ${fmt(t.payNow)}` + (t.dep ? `\n*Saldo pendiente:* ${fmt(t.balance)} (antes de la entrega)` : '') + `\n*Entrega estimada:* ${t.eta} después de la compra` : '')
     + `\n\nMis datos:\nNombre: ${f.name.trim()}\nTeléfono: ${f.phone.trim()}\nDirección: ${f.address.trim()}`
     + `\n\nQuedo atento para coordinar el pago y la entrega.`;
 }
@@ -570,6 +588,7 @@ function sendWhatsApp() {
     ui.err = 'Completa tu nombre, un teléfono válido y tu dirección.'; return paintCart();
   }
   ui.waUrl = waLink(waOrderMsg());
+  { const t0 = calc(); ui.donePre = t0.pre; ui.doneEta = t0.eta; }
   cart = []; saveCart(); ui.applied = null; ui.code = ''; ui.codeMsg = ''; jdel(K.code);
   ui.err = ''; ui.step = 'done'; ui.doneWa = true; paintCart();
   openWa(ui.waUrl);
@@ -589,7 +608,8 @@ function summaryHtml(t) {
     <div><span>Subtotal</span><span>${fmt(t.subtotal)}</span></div>
     ${t.discount ? `<div><span>Descuento${ui.applied ? ' ' + esc(ui.applied.code) : ''}</span><span>-${fmt(t.discount)}</span></div>` : ''}
     ${t.ship.length > 1 ? t.ship.map((x) => `<div><span>Envío · ${esc(x.name)}</span><span>${shipTxt(x.cost)}</span></div>`).join('') : `<div><span>Envío ${t.st.sel ? esc(t.st.sel.name) : ''}</span><span>${shipTxt(t.shipping)}</span></div>`}
-    <div class="big"><span>Total</span><span>${fmt(t.total)}</span></div></div>`;
+    <div class="big"><span>Total</span><span>${fmt(t.total)}</span></div>
+    ${t.pre ? `<div style="font-weight:700;color:var(--blue)"><span>${t.dep ? `Abono ahora (${t.pct}%)` : 'Pagas ahora'}</span><span>${fmt(t.payNow)}</span></div>${t.dep ? `<div><span>Saldo pendiente</span><span>${fmt(t.balance)}</span></div>` : ''}` : ''}</div>`;
 }
 
 function paintCart() {
@@ -600,7 +620,7 @@ function paintCart() {
       body = `<div class="state">Tu carrito está vacío.<br><button class="btn alt" data-close="dc">Ver productos</button></div>`;
     } else {
       const rowHtml = (l) => `<div class="row">${imgTag(l.p.images?.[0], 600, l.p.title)}
-        <div><div style="font-weight:600;line-height:1.2">${esc(l.p.title)}</div><small>${l.size === 'ÚNICA' ? '' : esc(l.size) + ' · '}${fmt(price(l.p))}</small></div>
+        <div><div style="font-weight:600;line-height:1.2">${esc(l.p.title)}</div><small>${l.size === 'ÚNICA' ? '' : esc(l.size) + ' · '}${fmt(price(l.p))}${isPre(l.p) ? ' · Pre-orden' : ''}</small></div>
         <button class="rm" data-rm="${l.i}">Quitar</button></div>`;
       const gs = t.st.gs, tagged = gs.length > 1 || gs.some((g) => g.vendor);
       body = gs.map((g) => (tagged ? `<div class="vh">Enviado por: <b>${esc(g.name)}</b></div>` : '') + g.lines.map(rowHtml).join('')).join('') + `
@@ -610,9 +630,14 @@ function paintCart() {
         <div class="lbl">Código de descuento</div>
         <div class="code"><input id="codeIn" value="${esc(ui.code)}" placeholder="Opcional" autocomplete="off"><button data-code>Aplicar</button></div>
         ${ui.codeMsg ? `<div class="${ui.applied ? 'note' : 'err'}">${esc(ui.codeMsg)}</div>` : ''}
+        ${t.mixed ? '<div class="err">Tu carrito mezcla pre-órdenes con productos en stock. Las pre-órdenes se compran por separado: quita unos u otros para continuar.</div>' : ''}
+        ${t.pre ? `<div class="note"><b>Pre-orden · traído de Amazon.</b> Entrega estimada: ${esc(t.eta)} después de la compra.${t.pct < 100 ? ' El saldo se paga antes de la entrega.' : ''}</div>
+          ${t.pct < 100 ? `<div class="lbl">¿Cómo quieres pagar?</div>
+          <div class="zones"><button class="zone" data-paymode="dep" aria-pressed="${t.dep}"><b>Abonar ${t.pct}%</b><small>${fmt(t.depAmt)} ahora</small></button>
+          <button class="zone" data-paymode="full" aria-pressed="${!t.dep}"><b>Pagar el total</b><small>${fmt(t.total)}</small></button></div>` : ''}` : ''}
         ${summaryHtml(t)}
         ${CHECKOUT === 'whatsapp' ? '<div class="note">Tu compra se completa por WhatsApp: en el siguiente paso envías tu pedido y coordinamos el pago y la entrega contigo.</div>' : ''}
-        <button class="btn" style="margin-top:16px" data-step="data" ${t.st.blocked ? 'disabled' : ''}>Continuar</button>`;
+        <button class="btn" style="margin-top:16px" data-step="data" ${t.st.blocked || t.mixed ? 'disabled' : ''}>Continuar</button>`;
     }
   } else if (ui.step === 'data') {
     body = `<label class="field"><span>Nombre completo</span><input id="f_name" value="${esc(ui.form.name)}" autocomplete="name" maxlength="80"></label>
@@ -621,7 +646,7 @@ function paintCart() {
       ${ui.err ? `<div class="err">${esc(ui.err)}</div>` : ''}
       ${summaryHtml(t)}
       ${CHECKOUT === 'whatsapp' ? '<div class="note"><b>Importante:</b> tu compra se completará por WhatsApp. Al tocar el botón se abrirá la conversación con tu pedido y tus datos ya escritos; nosotros te confirmamos disponibilidad, total final y forma de pago. El total mostrado es estimado.</div>' : ''}
-      <button class="btn ${CHECKOUT === 'whatsapp' ? 'ok' : ''}" style="margin-top:16px" data-submit ${ui.busy || t.st.blocked ? 'disabled' : ''}>${CHECKOUT === 'whatsapp' ? WA_ICON + 'Enviar pedido por WhatsApp' : (ui.busy ? 'Creando pedido…' : 'Confirmar y pagar')}</button>
+      <button class="btn ${CHECKOUT === 'whatsapp' ? 'ok' : ''}" style="margin-top:16px" data-submit ${ui.busy || t.st.blocked || t.mixed ? 'disabled' : ''}>${CHECKOUT === 'whatsapp' ? WA_ICON + 'Enviar pedido por WhatsApp' : (ui.busy ? 'Creando pedido…' : 'Confirmar y pagar')}</button>
       <button class="btn ghost" data-step="cart">Volver al carrito</button>`;
   } else if (ui.step === 'pay' && pending) {
     const banks = (settings.bankAccounts || []).filter((b) => b && b.accountNumber);
@@ -643,6 +668,7 @@ function paintCart() {
   } else if (ui.step === 'done' && ui.doneWa) {
     body = `<div class="done"><div class="ck">✓</div><h2>Ya casi: termina en WhatsApp</h2>
       <p style="color:var(--ink2);margin-top:8px">Abrimos WhatsApp con tu pedido y tus datos. Solo toca enviar el mensaje y te atenderemos para confirmar y coordinar el pago y la entrega.</p>
+      ${ui.donePre ? `<div class="note" style="text-align:left">Tu pre-orden tiene una entrega estimada de <b>${esc(ui.doneEta)}</b> después de la compra.</div>` : ''}
       <a class="btn ok" style="margin-top:18px;text-decoration:none" target="_blank" rel="noopener" href="${esc(ui.waUrl)}">${WA_ICON}Abrir WhatsApp otra vez</a>
       <button class="btn ghost" data-close="dc">Seguir comprando</button></div>`;
   } else if (ui.step === 'done') {
@@ -761,6 +787,7 @@ document.addEventListener('click', (e) => {
   else if (g('dot') !== undefined) { const h = $('#hero'); h.scrollTo({ left: +g('dot') * (h.clientWidth + 12), behavior: 'smooth' }); }
   else if (t.hasAttribute('data-popup')) openPopup();
   else if (g('usecode')) { if (useCode(g('usecode'))) closeDlg('dpop'); }
+  else if (g('paymode')) { ui.pay = g('paymode'); paintCart(); }
   else if (g('rm') !== undefined) { cart.splice(+g('rm'), 1); saveCart(); paintCart(); }
   else if (t.hasAttribute('data-code')) applyCode();
   else if (g('step')) { ui.err = ''; ui.step = g('step'); paintCart(); }
