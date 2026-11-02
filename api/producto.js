@@ -32,7 +32,7 @@ async function loadHtml(host) {
 
 async function loadProduct(id, apiKey) {
   const url = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents/products/${encodeURIComponent(id)}${apiKey ? `?key=${apiKey}` : ''}`;
-  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 3500);
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 2000);
   try {
     const r = await fetch(url, { signal: ctl.signal });
     if (!r.ok) return null;
