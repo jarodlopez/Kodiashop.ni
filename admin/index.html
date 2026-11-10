@@ -201,10 +201,11 @@ function bind(){
   const o=$('#out');if(o)o.onclick=()=>{loaded=false;P=[];auth.signOut()}}
 
 /* ---------- editor ---------- */
+const txt=v=>Array.isArray(v)?v.join('\n'):String(v||'');
 const cleanSize=t=>String(t).replace(/\./g,',').replace(/[\/\\\[\]*~`]/g,'-').replace(/\s+/g,' ').trim().slice(0,60);
 function edit(id){cur=id;delArm=false;const p=id?P.find(x=>x.id===id):null;
-  draft=p?{title:p.title||'',sku:p.sku||'',price:p.price??'',discountPrice:p.discountPrice||'',category:p.category||'',description:p.description||'',images:[...(p.images||[])],sizes:[...(p.sizes||[])],stockBySizes:{...(p.stockBySizes||{})}}
-        :{title:'',sku:'',price:'',discountPrice:'',category:'',description:'',images:[],sizes:[],stockBySizes:{}};
+  draft=p?{title:p.title||'',sku:p.sku||'',price:p.price??'',discountPrice:p.discountPrice||'',category:p.category||'',description:txt(p.description),details:txt(p.details),images:[...(p.images||[])],sizes:[...(p.sizes||[])],stockBySizes:{...(p.stockBySizes||{})}}
+        :{title:'',sku:'',price:'',discountPrice:'',category:'',description:'',details:'',images:[],sizes:[],stockBySizes:{}};
   drawEd();document.body.classList.add('open');$('#ed').setAttribute('aria-hidden','false')}
 function closeEd(){document.body.classList.remove('open');$('#ed').setAttribute('aria-hidden','true')}
 $('#scrim').onclick=closeEd;document.addEventListener('keydown',e=>{if(e.key==='Escape')closeEd()});
@@ -221,6 +222,7 @@ function drawEd(){const d=draft,S=d.sizes.length?d.sizes:['ÚNICA'];
    <div class="two"><label class="f"><span>Categoría</span><input class="in" id="f_cat" list="cl" value="${esc(d.category)}"><datalist id="cl">${cats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></label>
    <label class="f"><span>SKU</span><input class="in" id="f_sku" value="${esc(d.sku)}"></label></div>
    <label class="f"><span>Descripción</span><textarea class="in" id="f_desc">${esc(d.description)}</textarea></label>
+   <label class="f"><span>Características</span><textarea class="in" id="f_det" style="min-height:130px" placeholder="Batería: 5000 mAh&#10;Pantalla: 6.7 pulgadas&#10;Garantía: 6 meses">${esc(d.details)}</textarea><div class="hint">Una característica por línea.</div></label>
    <label class="f"><span>Opciones (color, capacidad…)</span><input class="in" id="f_sz" value="${esc(d.sizes.join(', '))}" placeholder="Negro, Blanco, 128 GB"><div class="hint">Sepáralas con comas. Déjalo vacío si no tiene opciones.</div></label>
    <div class="f"><span style="display:block;font-size:13px;font-weight:600;color:var(--tx2);margin-bottom:8px">Stock por opción</span>
     ${S.map(s=>`<div class="stk"><span>${esc(s)}</span><input class="in" data-st="${esc(s)}" type="number" inputmode="numeric" min="0" placeholder="Sin límite" value="${esc(d.stockBySizes[s]??'')}"></div>`).join('')}
@@ -234,7 +236,7 @@ function drawEd(){const d=draft,S=d.sizes.length?d.sizes:['ÚNICA'];
   const del=$('#del');if(del)del.onclick=remove}
 
 function sync(){const d=draft,g=i=>$(i).value;
-  d.title=g('#f_title');d.price=g('#f_price');d.discountPrice=g('#f_disc');d.category=g('#f_cat');d.sku=g('#f_sku');d.description=g('#f_desc');
+  d.title=g('#f_title');d.price=g('#f_price');d.discountPrice=g('#f_disc');d.category=g('#f_cat');d.sku=g('#f_sku');d.description=g('#f_desc');d.details=g('#f_det');
   d.sizes=[...new Set(g('#f_sz').split(/[,;\n]+/).map(cleanSize).filter(Boolean))];
   const st={};document.querySelectorAll('[data-st]').forEach(i=>{if(i.value!=='')st[i.dataset.st]=Number(i.value)});
   d.stockBySizes=Object.fromEntries(Object.entries(st).filter(([k])=>d.sizes.length?d.sizes.includes(k):k==='ÚNICA'))}
@@ -250,7 +252,7 @@ async function save(){sync();const d=draft,e=$('#ee');e.textContent='';
   if(d.title.trim().length<2)return e.textContent='Escribe el nombre del producto.';
   if(!(Number(d.price)>0))return e.textContent='Escribe un precio mayor a 0.';
   if(d.discountPrice!==''&&Number(d.discountPrice)>=Number(d.price))return e.textContent='El precio con descuento debe ser menor al precio normal.';
-  const doc={title:d.title.trim(),sku:d.sku.trim(),price:Number(d.price),discountPrice:d.discountPrice===''?0:Number(d.discountPrice),category:d.category.trim(),description:d.description.trim(),images:d.images,sizes:d.sizes,stockBySizes:d.stockBySizes};
+  const doc={title:d.title.trim(),sku:d.sku.trim(),price:Number(d.price),discountPrice:d.discountPrice===''?0:Number(d.discountPrice),category:d.category.trim(),description:d.description.trim(),details:d.details.split('\n').map(x=>x.trim()).filter(Boolean),images:d.images,sizes:d.sizes,stockBySizes:d.stockBySizes};
   const b=$('#sv');b.disabled=true;b.textContent='Guardando…';
   try{if(cur)await db.collection('products').doc(cur).update(doc);else await db.collection('products').add({...doc,createdAt:new Date().toISOString()});
     closeEd();toast(cur?'Cambios guardados':'Producto agregado');await load()}
