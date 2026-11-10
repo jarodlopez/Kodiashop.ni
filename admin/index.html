@@ -25,7 +25,7 @@ var db=firebase.firestore(),auth=firebase.auth();
 <style>
 :root{--bg:#f4f5f8;--s:#fff;--s2:#eceef3;--line:#e1e4ec;--tx:#10172a;--tx2:#4d566c;--tx3:#6a7288;--ac:#2f4bff;--ac-t:#fff;--ok:#0b6b45;--okb:#d9f5e6;--warn:#8a4b00;--warnb:#ffeccc;--bad:#b3261e;--badb:#fde2df;--r:14px}
 @media(prefers-color-scheme:dark){:root{--bg:#0e1117;--s:#161b24;--s2:#202735;--line:#262e3d;--tx:#eef1f8;--tx2:#aab3c7;--tx3:#8d97ad;--ac:#7c93ff;--ac-t:#0b1030;--ok:#7be0ae;--okb:#10382a;--warn:#ffc46b;--warnb:#3b2a0e;--bad:#ff9a92;--badb:#44181a}}
-*{box-sizing:border-box;margin:0}html{-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}*{box-sizing:border-box;margin:0}html{-webkit-text-size-adjust:100%}
 body{background:var(--bg);color:var(--tx);font:15px/1.45 Geist,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;min-height:100dvh;overflow-x:hidden}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none;touch-action:manipulation}
@@ -44,7 +44,7 @@ label.f{display:block;margin-bottom:16px}label.f>span{display:block;font-size:13
 #login h1{font-size:30px;letter-spacing:-.03em;margin-bottom:6px}#login p{color:var(--tx2);margin-bottom:28px}
 .err{color:var(--bad);font-size:14px;min-height:20px;margin:6px 0 10px}
 /* shell */
-#app{display:none;min-height:100dvh}
+#app{display:none;min-height:100dvh}#app.on{display:block}
 #rail{display:none}
 main{padding:20px 16px calc(96px + env(safe-area-inset-bottom));max-width:880px;margin:0 auto}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
@@ -87,7 +87,7 @@ body.open #scrim{opacity:1;pointer-events:auto}body.open #ed{transform:none}
 #toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translate(-50%,20px);background:var(--tx);color:var(--bg);padding:12px 18px;border-radius:12px;font-weight:500;opacity:0;pointer-events:none;transition:.25s;z-index:90;max-width:90vw}
 #toast.on{opacity:1;transform:translate(-50%,0)}
 @media(min-width:900px){
- #app{display:grid;grid-template-columns:230px 1fr}
+ #app.on{display:grid;grid-template-columns:230px 1fr}
  #rail{display:flex;flex-direction:column;gap:4px;padding:24px 14px;position:sticky;top:0;height:100dvh;border-right:1px solid var(--line)}
  #rail .brand{font-weight:700;font-size:20px;letter-spacing:-.03em;padding:0 12px 18px}
  #rail .tab{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;min-height:44px;padding:0 12px;border-radius:12px;font-size:15px}
@@ -140,12 +140,12 @@ const price=p=>p.discountPrice>0?p.discountPrice:p.price;
 
 /* ---------- sesión ---------- */
 auth.onAuthStateChanged(u=>{
-  $('#login').hidden=!!u;$('#app').style.display=u?'':'none';
+  $('#login').hidden=!!u;$('#app').classList.toggle('on',!!u);
   if(u&&!loaded)load();
 });
 $('#lf').onsubmit=async e=>{e.preventDefault();const b=$('#lb');b.disabled=true;b.textContent='Entrando…';$('#le').textContent='';
-  try{await auth.signInWithEmailAndPassword($('#em').value.trim(),$('#pw').value)}
-  catch(x){$('#le').textContent=/network/.test(x.code)?'Sin conexión. Revisa tu internet e inténtalo otra vez.':'Correo o contraseña incorrectos.'}
+  try{await Promise.race([auth.signInWithEmailAndPassword($('#em').value.trim(),$('#pw').value),new Promise((_,rj)=>setTimeout(()=>rj({code:'timeout'}),15000))])}
+  catch(x){const c=x&&x.code||'';$('#le').textContent=c==='timeout'||/network/.test(c)?'No hay respuesta. Revisa tu internet e inténtalo otra vez.':/too-many/.test(c)?'Demasiados intentos. Espera unos minutos.':/invalid-api|unauthorized|operation-not/.test(c)?'Este dominio no está autorizado en Firebase ('+c+').':'Correo o contraseña incorrectos.'}
   b.disabled=false;b.textContent='Entrar'};
 
 async function load(){render();
