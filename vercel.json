@@ -12,6 +12,10 @@
       "destination": "/admin/index.html"
     },
     {
+      "source": "/admin/studio",
+      "destination": "/admin/studio.html"
+    },
+    {
       "source": "/checkout",
       "destination": "/checkout.html"
     },
@@ -31,6 +35,10 @@
   "functions": {
     "api/producto.js": {
       "includeFiles": "index.html"
+    },
+    "api/studio-generate.js": {
+      "maxDuration": 60,
+      "includeFiles": "api/_studio/**"
     }
   }
 }
